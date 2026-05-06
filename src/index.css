@@ -1,0 +1,153 @@
+@import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;900&family=Cormorant+Garamond:wght@300;400;600&display=swap');
+
+/* 🌿 Animación 3D para el logo del Dashboard */
+@theme {
+  --animate-float3D: float3D 6s ease-in-out infinite;
+}
+
+@keyframes float3D {
+  0% { transform: translateY(0px) rotateY(0deg) rotateX(0deg); }
+  25% { transform: translateY(-10px) rotateY(3deg) rotateX(2deg); }
+  50% { transform: translateY(0px) rotateY(0deg) rotateX(0deg); }
+  75% { transform: translateY(-10px) rotateY(-3deg) rotateX(-2deg); }
+  100% { transform: translateY(0px) rotateY(0deg) rotateX(0deg); }
+}
+
+/* 🌿 Estilos base */
+body {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 1.25rem;
+  line-height: 1.8;
+  background-color: #faf6f2;
+  color: #2c2c2c;
+}
+
+h1, h2, h3, h4, h5, h6, .school-name {
+  font-family: 'Playfair Display', serif;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+h1 { font-size: 2.8rem; }
+h2 { font-size: 2.2rem; }
+h3 { font-size: 1.8rem; }
+h4 { font-size: 1.4rem; }
+
+.school-name {
+  background: linear-gradient(135deg, #b8860b 0%, #ffd700 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  text-shadow: 0 0 25px rgba(255, 215, 0, 0.4);
+  font-size: 2rem;
+}
+
+/* 🌟 BOTONES – profesionales, claros y con luz */
+button, 
+.button,
+a.bg-indigo-600,
+a.bg-green-600,
+a.bg-purple-600,
+a.bg-white,
+button.bg-indigo-600 {
+  font-size: 1rem !important;
+  padding: 0.75rem 1.5rem !important;
+  border-radius: 0.75rem !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.3px;
+  transition: all 0.3s ease;
+}
+
+/* Mejora el contraste de botones primarios (índigo) */
+.bg-indigo-600 {
+  background-color: #4f46e5 !important;
+  color: #ffffff !important;
+}
+.bg-indigo-600:hover {
+  background-color: #4338ca !important;
+  box-shadow: 0 4px 15px rgba(79, 70, 229, 0.3);
+}
+
+/* Botones "Entrar" (verde) – amables y claros */
+.bg-green-600 {
+  background-color: #059669 !important;
+  color: #ffffff !important;
+}
+.bg-green-600:hover {
+  background-color: #047857 !important;
+  box-shadow: 0 4px 15px rgba(5, 150, 105, 0.3);
+}
+
+/* Botones premium (púrpura) */
+.bg-purple-600 {
+  background-color: #7c3aed !important;
+  color: #ffffff !important;
+}
+.bg-purple-600:hover {
+  background-color: #6d28d9 !important;
+  box-shadow: 0 4px 15px rgba(124, 58, 237, 0.3);
+}
+
+/* Botones outline (explorar módulos, inscribirse) */
+.bg-indigo-50 {
+  background-color: #eef2ff !important;
+  color: #4f46e5 !important;
+  border: 2px solid #c7d2fe !important;
+}
+.bg-indigo-50:hover {
+  background-color: #e0e7ff !important;
+  border-color: #4f46e5 !important;
+}
+
+/* Botones de navegación (Inicio, Cursos, Admin, Iniciar sesión, Cerrar sesión) */
+nav a, nav button {
+  font-size: 1rem !important;
+  padding: 0.5rem 1rem !important;
+}
+
+/* Botón "Iniciar sesión" */
+nav a.bg-indigo-600 {
+  padding: 0.5rem 1.25rem !important;
+  font-size: 0.95rem !important;
+  color: #fff !important;
+}
+
+/* 🌟 Título principal del hero (elegante y armónico) */
+.hero-title {
+  font-family: 'Playfair Display', serif;
+  font-weight: 700;
+  font-size: 2.5rem;
+  line-height: 1.2;
+  letter-spacing: 0.5px;
+  color: #1e293b;
+  text-shadow: 0 2px 10px rgba(30, 41, 59, 0.08);
+  text-transform: uppercase;
+  margin: 0;
+}
+
+@media (max-width: 640px) {
+  .hero-title {
+    font-size: 1.8rem;
+  }
+}
+
+/* 🌟 BOTONES REDONDOS (para los del hero) */
+.rounded-full {
+  border-radius: 9999px !important;
+  font-size: 1rem;
+  padding: 0.75rem 1.5rem !important;
+  letter-spacing: 0.5px;
+}
+
+/* 🌟 Logo 3D – efecto de profundidad natural (sin bordes dorados) */
+.logo-3d {
+  transform: perspective(600px) rotateY(3deg) rotateX(2deg);
+  transition: transform 0.4s ease, box-shadow 0.4s ease;
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.15);
+}
+
+.logo-3d:hover {
+  transform: perspective(600px) rotateY(0deg) rotateX(0deg) scale(1.04);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+}

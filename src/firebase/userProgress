@@ -1,0 +1,39 @@
+{
+  userId: "",
+
+  /* 🧭 EXPERIENCIA */
+
+  activeCourseId: null,
+
+  lastCourseId: null,
+  lastModuleId: null,
+  lastLessonId: null,
+
+  phase: "guided", // "guided" | "exploration"
+
+  lastVisitedAt: null, // luego serverTimestamp()
+
+
+  /* 🔐 ACCESO */
+
+  access: {
+    type: "full", // "full" | "limited"
+
+    courses: [], // ["courseId1"]
+
+    bundles: [], // futuro (programas, membresías)
+
+    expiresAt: null // Timestamp o null
+  },
+
+
+  /* 🧠 MEMORIA (RESERVADO - NO USAR AÚN) */
+
+  history: [],
+
+
+  /* ⏱️ SISTEMA */
+
+  createdAt: null,  // serverTimestamp()
+  updatedAt: null   // serverTimestamp()
+}
