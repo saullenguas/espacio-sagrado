@@ -1,9 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useSearchParams, Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { verifyAndGrantAccess } from '../services/paymentService'
 import { doc, setDoc, getDoc, arrayUnion } from 'firebase/firestore'
 import { db } from '../firebase/config'
+
+const PAYMENT_MODE = import.meta.env.VITE_PAYMENT_MODE || 'simulation'
 
 const grantAccessSimulated = async (userId, metadata) => {
   const { type, courseId, duration = '1y' } = metadata
@@ -45,70 +47,70 @@ function PagoExitoso() {
   const [message, setMessage] = useState('')
   const [detail, setDetail] = useState(null)
 
+  const processPayment = useCallback(async () => {
+    try {
+      const simulated = searchParams.get('simulated')
+      const sessionId = searchParams.get('session_id') || searchParams.get('payment_id')
+      const provider = searchParams.get('provider') || 'stripe'
+
+      let result
+
+      if (simulated === 'true') {
+        if (PAYMENT_MODE !== 'simulation') {
+          throw new Error('Pago simulado no permitido en modo producción')
+        }
+        const metadataStr = searchParams.get('metadata')
+        if (!metadataStr) throw new Error('Metadata de simulación no encontrada')
+        const metadata = JSON.parse(metadataStr)
+
+        if (!metadata.userId || metadata.userId !== user.uid) {
+          throw new Error('El pago no corresponde a tu usuario')
+        }
+
+        result = await grantAccessSimulated(user.uid, metadata)
+
+      } else if (sessionId) {
+        result = await verifyAndGrantAccess(sessionId, provider)
+        if (!result.success) throw new Error('El pago no pudo ser verificado')
+      } else {
+        throw new Error('No se encontraron datos de pago')
+      }
+
+      await refreshUser()
+
+      if (result.type === 'course') {
+        setMessage('¡Te has inscrito correctamente al curso! 🌿')
+        setDetail('Ya puedes acceder a todos los módulos y lecciones.')
+      } else if (result.type === 'premium') {
+        setMessage('¡Ahora tienes acceso total a todos los cursos! 💎')
+        const expiry = result.expiresAt
+          ? new Date(result.expiresAt).toLocaleDateString('es-MX', {
+              year: 'numeric', month: 'long', day: 'numeric'
+            })
+          : null
+        setDetail(expiry ? `Tu acceso es válido hasta el ${expiry}.` : null)
+      } else {
+        setMessage('¡Pago procesado con éxito!')
+      }
+
+      setStatus('exito')
+
+    } catch (error) {
+      console.error('Error procesando pago:', error)
+      setStatus('error')
+      setMessage('Ocurrió un error al procesar tu pago.')
+      setDetail('Por favor contacta al administrador o intenta de nuevo.')
+    }
+  }, [user, searchParams, refreshUser])
+
   useEffect(() => {
     if (loading) return
-
-    // navigate dentro de useEffect — correcto
     if (!user) {
       navigate(`/login?redirect=/pago-exitoso?${searchParams.toString()}`, { replace: true })
       return
     }
-
-    const processPayment = async () => {
-      try {
-        const simulated = searchParams.get('simulated')
-        const sessionId = searchParams.get('session_id') || searchParams.get('payment_id')
-        const provider = searchParams.get('provider') || 'stripe'
-
-        let result
-
-        if (simulated === 'true') {
-          const metadataStr = searchParams.get('metadata')
-          if (!metadataStr) throw new Error('Metadata de simulación no encontrada')
-          const metadata = JSON.parse(metadataStr)
-
-          if (!metadata.userId || metadata.userId !== user.uid) {
-            throw new Error('El pago no corresponde a tu usuario')
-          }
-
-          result = await grantAccessSimulated(user.uid, metadata)
-
-        } else if (sessionId) {
-          result = await verifyAndGrantAccess(sessionId, provider)
-          if (!result.success) throw new Error('El pago no pudo ser verificado')
-        } else {
-          throw new Error('No se encontraron datos de pago')
-        }
-
-        await refreshUser()
-
-        if (result.type === 'course') {
-          setMessage('¡Te has inscrito correctamente al curso! 🌿')
-          setDetail('Ya puedes acceder a todos los módulos y lecciones.')
-        } else if (result.type === 'premium') {
-          setMessage('¡Ahora tienes acceso total a todos los cursos! 💎')
-          const expiry = result.expiresAt
-            ? new Date(result.expiresAt).toLocaleDateString('es-MX', {
-                year: 'numeric', month: 'long', day: 'numeric'
-              })
-            : null
-          setDetail(expiry ? `Tu acceso es válido hasta el ${expiry}.` : null)
-        } else {
-          setMessage('¡Pago procesado con éxito!')
-        }
-
-        setStatus('exito')
-
-      } catch (error) {
-        console.error('Error procesando pago:', error)
-        setStatus('error')
-        setMessage('Ocurrió un error al procesar tu pago.')
-        setDetail('Por favor contacta al administrador o intenta de nuevo.')
-      }
-    }
-
     processPayment()
-  }, [user, loading])
+  }, [user, loading, navigate, searchParams, processPayment])
 
   if (status === 'procesando') {
     return (
@@ -131,7 +133,7 @@ function PagoExitoso() {
             <p className="text-slate-600 mt-3">{message}</p>
             {detail && <p className="text-slate-500 text-sm mt-2">{detail}</p>}
             <Link
-              to="/suscribirse"
+              to="/"
               className="mt-6 inline-block bg-indigo-600 text-white px-8 py-3 rounded-xl font-semibold hover:bg-indigo-700 transition"
             >
               Ir a mis cursos

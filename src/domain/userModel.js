@@ -1,8 +1,9 @@
 // 🧠 CONSTANTES DE DOMINIO
 export const USER_ROLES = {
   STUDENT: "student",
-  PREMIUM: "premium",
   ADMIN: "admin",
+  // PREMIUM no existe como rol — el acceso premium se controla
+  // con accessType: 'all' + premiumExpiry, no con un rol separado
 };
 
 export const ACCESS_TYPES = {
@@ -11,39 +12,42 @@ export const ACCESS_TYPES = {
   GUEST: "guest",
 };
 
-// 🧠 MODELO BASE (DOMINIO PURO)
-export const createUserModel = (data = {}) => {
-  return {
-    uid: data.uid || data.id || null,
-    email: data.email || null,
-    role: data.role || USER_ROLES.STUDENT,
-    accessType: data.accessType || ACCESS_TYPES.LIMITED,
-    enrolledCourses: data.enrolledCourses || [],
-    premiumExpiry: data.premiumExpiry || null, // ← NUEVO
-    lastCourseId: data.lastCourseId || null,
-    lastModuleId: data.lastModuleId || null,
-    lastLessonId: data.lastLessonId || null,
-    phase: data.phase || "guided",
-    createdAt: data.createdAt || null,
-    updatedAt: data.updatedAt || null,
-  };
-};
+// 🧠 MODELO BASE
+export const createUserModel = (data = {}) => ({
+  uid: data.uid || data.id || null,
+  email: data.email || null,
+  role: data.role || USER_ROLES.STUDENT,
+  accessType: data.accessType || ACCESS_TYPES.LIMITED,
+  enrolledCourses: data.enrolledCourses || [],
+  premiumExpiry: data.premiumExpiry || null,
+  lastCourseId: data.lastCourseId || null,
+  lastModuleId: data.lastModuleId || null,
+  lastLessonId: data.lastLessonId || null,
+  phase: data.phase || "guided",
+  createdAt: data.createdAt || null,
+  updatedAt: data.updatedAt || null,
+});
 
-// 🔍 HELPERS PUROS (SIN INFRAESTRUCTURA)
-export const isAdmin = (user) => user?.role === USER_ROLES.ADMIN;
-export const isPremium = (user) => user?.role === USER_ROLES.PREMIUM;
+// 🔍 HELPERS PUROS
+
+export const isAdmin = (user) =>
+  user?.role === USER_ROLES.ADMIN;
 
 export const isPremiumActive = (user) => {
   if (!user?.premiumExpiry) return false;
-  const expiry = user.premiumExpiry?.toDate?.() || user.premiumExpiry;
+  const expiry = user.premiumExpiry?.toDate?.() ?? new Date(user.premiumExpiry);
   return expiry > new Date();
 };
 
-export const hasFullAccess = (user) =>
-  isAdmin(user) ||
-  (user?.accessType === ACCESS_TYPES.ALL && isPremiumActive(user));
+// isPremium = tiene accessType all Y su suscripción está vigente
+export const isPremium = (user) =>
+  user?.accessType === ACCESS_TYPES.ALL && isPremiumActive(user);
 
-export const isGuest = (user) => !user || user?.accessType === ACCESS_TYPES.GUEST;
+export const hasFullAccess = (user) =>
+  isAdmin(user) || isPremium(user);
+
+export const isGuest = (user) =>
+  !user || user?.accessType === ACCESS_TYPES.GUEST;
 
 export const isEnrolledInCourse = (user, courseId) => {
   if (!user || !courseId) return false;
@@ -54,24 +58,23 @@ export const isEnrolledInCourse = (user, courseId) => {
 export const canAccessCourse = (user, courseId) =>
   isAdmin(user) || isEnrolledInCourse(user, courseId);
 
-// 🔄 ADAPTER (PUENTE DOMINIO ⇄ INFRAESTRUCTURA)
+// 🔄 ADAPTER
 export const userAdapter = {
   toDomain(raw) {
     if (!raw) return null;
-    const hasFirestoreData = raw.role !== undefined;
     return {
       uid: raw.uid,
       email: raw.email,
-      role: hasFirestoreData ? raw.role : USER_ROLES.STUDENT,
-      accessType: hasFirestoreData ? raw.accessType : ACCESS_TYPES.LIMITED,
+      role: raw.role ?? USER_ROLES.STUDENT,
+      accessType: raw.accessType ?? ACCESS_TYPES.LIMITED,
       enrolledCourses: raw.enrolledCourses || [],
-      premiumExpiry: raw.premiumExpiry || null, // ← NUEVO
-      lastCourseId: raw.lastCourseId,
-      lastModuleId: raw.lastModuleId,
-      lastLessonId: raw.lastLessonId,
-      phase: raw.phase,
-      createdAt: raw.createdAt,
-      updatedAt: raw.updatedAt,
+      premiumExpiry: raw.premiumExpiry || null,
+      lastCourseId: raw.lastCourseId || null,
+      lastModuleId: raw.lastModuleId || null,
+      lastLessonId: raw.lastLessonId || null,
+      phase: raw.phase || "guided",
+      createdAt: raw.createdAt || null,
+      updatedAt: raw.updatedAt || null,
     };
   },
   toPersistence(user) {
@@ -81,11 +84,11 @@ export const userAdapter = {
       role: user.role,
       accessType: user.accessType,
       enrolledCourses: user.enrolledCourses,
-      premiumExpiry: user.premiumExpiry || null, // ← NUEVO
-      lastCourseId: user.lastCourseId,
-      lastModuleId: user.lastModuleId,
-      lastLessonId: user.lastLessonId,
-      phase: user.phase,
+      premiumExpiry: user.premiumExpiry || null,
+      lastCourseId: user.lastCourseId || null,
+      lastModuleId: user.lastModuleId || null,
+      lastLessonId: user.lastLessonId || null,
+      phase: user.phase || null,
       createdAt: user.createdAt || null,
       updatedAt: user.updatedAt || null,
     };

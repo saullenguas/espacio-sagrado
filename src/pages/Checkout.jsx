@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useSearchParams, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
-import { createCheckoutSession, PRICES, suggestProvider } from '../services/paymentService'
+import { createCheckoutSession, PRICES } from '../services/paymentService'
 
 function Checkout() {
   const [searchParams] = useSearchParams()
@@ -17,28 +17,20 @@ function Checkout() {
   const [payLoading, setPayLoading] = useState(false)
   const [error, setError] = useState('')
 
-  // ── Moneda según proveedor ────────────────────
+  // Redirigir si no está autenticado — en useEffect, no durante el render
+  useEffect(() => {
+    if (!authLoading && !user) {
+      navigate(`/login?redirect=/checkout?${searchParams.toString()}`, { replace: true })
+    }
+  }, [user, authLoading, navigate, searchParams])
+
   const currency = selectedProvider === 'mercadopago' ? 'mxn' : 'usd'
 
-  // ── Precios correctos (ya en unidades, no centavos) ──
   const priceUSD = type === 'premium' ? PRICES.premium[duration]?.usd : PRICES.course.usd
   const priceMXN = type === 'premium' ? PRICES.premium[duration]?.mxn : PRICES.course.mxn
   const displayPrice = selectedProvider === 'mercadopago'
     ? `$${priceMXN} MXN`
     : `$${priceUSD} USD`
-
-  if (authLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-indigo-50 via-white to-purple-50">
-        <div className="animate-spin h-12 w-12 border-4 border-indigo-600 border-t-transparent rounded-full" />
-      </div>
-    )
-  }
-
-  if (!user) {
-    navigate(`/login?redirect=/checkout?${searchParams.toString()}`, { replace: true })
-    return null
-  }
 
   const handlePay = async () => {
     setPayLoading(true)
@@ -50,17 +42,31 @@ function Checkout() {
         courseId,
         currency,
         duration,
-        // En simulación estos van en el metadata para PagoExitoso
         userId: user.uid,
         email: user.email,
       })
-      navigate(url)
+
+      // URL interna (simulación) → react-router
+      // URL externa (Stripe / MercadoPago) → redirección real del navegador
+      if (url.startsWith('http')) {
+        window.location.href = url
+      } else {
+        navigate(url)
+      }
     } catch (err) {
       setError('Error al iniciar el pago. Intenta de nuevo.')
       console.error(err)
     } finally {
       setPayLoading(false)
     }
+  }
+
+  if (authLoading || !user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-indigo-50 via-white to-purple-50">
+        <div className="animate-spin h-12 w-12 border-4 border-indigo-600 border-t-transparent rounded-full" />
+      </div>
+    )
   }
 
   return (

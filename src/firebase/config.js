@@ -3,12 +3,12 @@ import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyDABhi7fEBu8pvYJeSGpjtUhWHXLSSkWf4",
-  authDomain: "espacio-sagrado.firebaseapp.com",
-  projectId: "espacio-sagrado",
-  storageBucket: "espacio-sagrado.firebasestorage.app",
-  messagingSenderId: "757202618552",
-  appId: "1:757202618552:web:18f4e245acf5b9545d4c4d"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
 const app = initializeApp(firebaseConfig);

@@ -15,25 +15,34 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == uid;
     }
 
-    function isSimulationMode() {
-      return request.resource.data.keys().hasAny(['enrolledCourses', 'accessType', 'premiumExpiry'])
-        && request.auth != null;
+    // Devuelve el documento del usuario o null si no existe
+    function userDoc(uid) {
+      return exists(/databases/$(database)/documents/users/$(uid))
+        ? get(/databases/$(database)/documents/users/$(uid)).data
+        : null;
+    }
+
+    // Campos que el usuario NUNCA puede modificar directamente
+    // (solo Cloud Functions o admin pueden tocarlos)
+    function noSensitiveFieldsChanged() {
+      let protectedFields = ['enrolledCourses', 'accessType', 'premiumExpiry', 'role'];
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(protectedFields);
     }
 
     // ─────────────────────────────────────────────
     // USUARIOS
     // ─────────────────────────────────────────────
-
     match /users/{userId} {
       allow read: if isOwner(userId) || isAdmin();
 
-      // Crear documento propio (registro normal o pago simulado)
+      // Registro: el usuario puede crear su propio documento
       allow create: if isOwner(userId) || isAdmin();
 
-      // El alumno puede actualizar su propio documento incluyendo
-      // enrolledCourses y accessType SOLO en modo simulación (VITE_PAYMENT_MODE=simulation)
-      // En producción, solo las Cloud Functions escriben estos campos
-      allow update: if isAdmin() || isOwner(userId);
+      // El usuario puede actualizar su perfil PERO no campos sensibles
+      // Solo el admin (o Cloud Functions con admin SDK) puede modificar
+      // enrolledCourses, accessType, premiumExpiry, role
+      allow update: if isAdmin()
+                    || (isOwner(userId) && noSensitiveFieldsChanged());
 
       allow delete: if isAdmin();
     }
@@ -41,7 +50,6 @@ service cloud.firestore {
     // ─────────────────────────────────────────────
     // CURSOS
     // ─────────────────────────────────────────────
-
     match /courses/{courseId} {
       allow read: if true;
       allow write: if isAdmin();
@@ -51,11 +59,14 @@ service cloud.firestore {
         allow write: if isAdmin();
 
         match /lessons/{lessonId} {
-          allow read: if isAdmin() ||
-            (isAuthenticated() && (
-              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.accessType == 'all' ||
-              courseId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.enrolledCourses
-            ));
+          // Verifica acceso con protección contra documentos inexistentes
+          allow read: if isAdmin() || (
+            isAuthenticated() &&
+            userDoc(request.auth.uid) != null && (
+              userDoc(request.auth.uid).accessType == 'all' ||
+              courseId in userDoc(request.auth.uid).enrolledCourses
+            )
+          );
           allow write: if isAdmin();
         }
       }
@@ -64,7 +75,6 @@ service cloud.firestore {
     // ─────────────────────────────────────────────
     // CONFIGURACIÓN
     // ─────────────────────────────────────────────
-
     match /settings/{document} {
       allow read: if true;
       allow write: if isAdmin();
@@ -73,7 +83,6 @@ service cloud.firestore {
     // ─────────────────────────────────────────────
     // TODO LO DEMÁS — denegado
     // ─────────────────────────────────────────────
-
     match /{document=**} {
       allow read, write: if false;
     }

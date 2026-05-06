@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 
 function Login() {
@@ -9,6 +9,10 @@ function Login() {
   const [error, setError] = useState('')
   const { login } = useAuth()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+
+  // Respetar el redirect si viene de una ruta protegida (ej: /checkout, /pago-exitoso)
+  const redirectTo = searchParams.get('redirect') || '/'
 
   const handleLogin = async (e) => {
     e.preventDefault()
@@ -21,7 +25,7 @@ function Login() {
 
     try {
       await login(email, password)
-      navigate('/')
+      navigate(redirectTo, { replace: true })
     } catch (error) {
       console.error('Error al iniciar sesión:', error)
       if (error.code === 'auth/user-not-found') {
@@ -75,7 +79,6 @@ function Login() {
             />
           </div>
 
-          {/* Recordar sesión + Olvidé contraseña */}
           <div className="flex items-center justify-between text-sm">
             <label className="flex items-center gap-2 text-gray-600 cursor-pointer">
               <input
@@ -94,7 +97,6 @@ function Login() {
             </Link>
           </div>
 
-          {/* Mensaje de error */}
           {error && (
             <p className="text-red-500 text-sm text-center bg-red-50 py-2 px-4 rounded-lg">
               {error}
@@ -109,13 +111,9 @@ function Login() {
           </button>
         </form>
 
-        {/* Enlace a registro */}
         <p className="text-center text-sm text-gray-500 mt-6">
           ¿No tienes cuenta?{' '}
-          <Link
-            to="/registro"
-            className="text-indigo-700 font-medium hover:underline"
-          >
+          <Link to="/registro" className="text-indigo-700 font-medium hover:underline">
             Regístrate aquí
           </Link>
         </p>
