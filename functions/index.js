@@ -215,4 +215,17 @@ exports.createCheckoutSession = onCall(async (request) => {
           back_urls: {
             success: appUrl + '/pago-exitoso?provider=mercadopago',
             failure: appUrl + '/suscribirse',
-            pending
+                      },
+          notification_url: appUrl + '/api/mercadopago/webhook',
+        },
+      })
+
+      return { url: response.init_point }
+    }
+
+    throw new HttpsError('internal', 'Proveedor no implementado')
+  } catch (error) {
+    console.error('Error creando sesión de checkout:', error)
+    throw new HttpsError('internal', error.message || 'Error al crear la sesión')
+  }
+})
