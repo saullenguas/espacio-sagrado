@@ -15,13 +15,13 @@ export const revokeStudentAccess = async (uid, courseId = null) => {
 }
 
 export const deleteStudentAccount = async (uid, adminToken) => {
-  const baseUrl = import.meta.env.VITE_FUNCTIONS_URL
+  const baseUrl = import.meta.env.VITE_DELETE_USER_URL
 
   if (!baseUrl) {
-    throw new Error('VITE_FUNCTIONS_URL no está configurada en el archivo .env')
+    throw new Error('VITE_DELETE_USER_URL no está configurada en el archivo .env')
   }
 
-  const res = await fetch(`${baseUrl}/deleteUserAccount`, {
+  const res = await fetch(baseUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

@@ -23,27 +23,22 @@ function Admin() {
   const [deleteConfirm, setDeleteConfirm] = useState(null)
   const [deleteError, setDeleteError] = useState(null)
 
-  // Alta manual
   const [enrollForm, setEnrollForm] = useState({ email: '', type: 'course', courseId: '', duration: '1y' })
   const [enrolling, setEnrolling] = useState(false)
   const [enrollMessage, setEnrollMessage] = useState(null)
 
-  // Admin
   const [newAdminEmail, setNewAdminEmail] = useState('')
   const [addingAdmin, setAddingAdmin] = useState(false)
   const [adminMessage, setAdminMessage] = useState(null)
 
-  // Mensajes comunidad
   const [messageSubject, setMessageSubject] = useState('')
   const [messageBody, setMessageBody] = useState('')
   const [messageTarget, setMessageTarget] = useState('all')
 
-  // UI toggles
   const [showUsers, setShowUsers] = useState(false)
   const [showEnroll, setShowEnroll] = useState(false)
   const [actionLoading, setActionLoading] = useState(null)
 
-  // ── Cargar usuarios ───────────────────────────
   const loadUsers = async () => {
     try {
       const snapshot = await getDocs(collection(db, 'users'))
@@ -67,7 +62,6 @@ function Admin() {
 
   useEffect(() => { loadUsers() }, [])
 
-  // ── Cargar cursos ─────────────────────────────
   useEffect(() => {
     const load = async () => {
       try {
@@ -82,7 +76,6 @@ function Admin() {
     load()
   }, [])
 
-  // ── Eliminar contenido ────────────────────────
   const handleDelete = async (type, id, courseId, moduleId) => {
     if (deleteConfirm !== id) { setDeleteConfirm(id); return }
     setDeleteError(null)
@@ -105,7 +98,6 @@ function Admin() {
     }
   }
 
-  // ── Alta manual de alumno ─────────────────────
   const handleEnrollManually = async (e) => {
     e.preventDefault()
     setEnrolling(true)
@@ -128,7 +120,6 @@ function Admin() {
     }
   }
 
-  // ── Revocar acceso ────────────────────────────
   const handleRevokeAccess = async (uid, email) => {
     if (!window.confirm(`¿Revocar el acceso de ${email}?\n\nSu cuenta permanece activa pero sin acceso a cursos.`)) return
     setActionLoading(uid + '_revoke')
@@ -144,7 +135,6 @@ function Admin() {
     }
   }
 
-  // ── Eliminar cuenta ───────────────────────────
   const handleDeleteUser = async (uid, email) => {
     if (!window.confirm(`⚠️ ¿Eliminar la cuenta de ${email} permanentemente?\n\nSe borrará de Auth y Firestore. Esta acción no se puede deshacer.`)) return
     setActionLoading(uid + '_delete')
@@ -161,7 +151,6 @@ function Admin() {
     }
   }
 
-  // ── Agregar admin ─────────────────────────────
   const handleAddAdmin = async (e) => {
     e.preventDefault()
     setAddingAdmin(true)
@@ -180,7 +169,6 @@ function Admin() {
     }
   }
 
-  // ── Badge de acceso ───────────────────────────
   const getAccessBadge = (u) => {
     if (u.accessType === 'all' && u.premiumExpiry) {
       return <span className="text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded-full">Premium hasta {u.premiumExpiry}</span>
@@ -194,9 +182,6 @@ function Admin() {
     return <span className="text-xs bg-slate-100 text-slate-500 px-2 py-1 rounded-full">Sin acceso</span>
   }
 
-  // ─────────────────────────────────────────────
-  // RENDER
-  // ─────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-gradient-to-b from-indigo-50 via-white to-purple-50 p-6">
       <div className="max-w-6xl mx-auto space-y-8">
@@ -478,3 +463,116 @@ function Admin() {
                           )}
                           {(!mod.lessons || mod.lessons.length === 0) && (
                             <p className="text-xs text-slate-400 pl-6 mt-1">Sin lecciones aún</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {(!course.modules || course.modules.length === 0) && (
+                    <p className="text-xs text-slate-400 pl-8 pb-4">Sin módulos aún</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* Administradores */}
+        <section className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
+          <h2 className="text-xl font-semibold text-slate-700 mb-4">👑 Administradores</h2>
+          <form onSubmit={handleAddAdmin} className="flex gap-3 items-end">
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-slate-700 mb-1">Email del nuevo administrador</label>
+              <input
+                type="email"
+                value={newAdminEmail}
+                onChange={e => setNewAdminEmail(e.target.value)}
+                placeholder="correo@ejemplo.com"
+                required
+                className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={addingAdmin}
+              className="bg-purple-600 text-white px-6 py-2 rounded-lg hover:bg-purple-700 transition disabled:opacity-50 font-medium"
+            >
+              {addingAdmin ? 'Agregando...' : 'Hacer administrador'}
+            </button>
+          </form>
+
+          {adminMessage && (
+            <div className={`mt-4 p-3 rounded-lg text-sm ${adminMessage.type === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-600 border border-red-200'}`}>
+              {adminMessage.text}
+            </div>
+          )}
+
+          <div className="mt-6">
+            <h3 className="text-sm font-medium text-slate-600 mb-2">Administradores actuales</h3>
+            <div className="space-y-2">
+              {users.filter(u => u.role === 'admin').map(a => (
+                <div key={a.uid} className="flex items-center justify-between bg-purple-50 rounded-lg p-3">
+                  <span className="text-sm text-slate-700">{a.email}</span>
+                  <span className="text-xs bg-purple-200 text-purple-800 px-2 py-1 rounded-full">Admin</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* Mensajes a la comunidad */}
+        <section className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
+          <h2 className="text-xl font-semibold text-slate-700 mb-4">📢 Compartir con la comunidad</h2>
+          <p className="text-sm text-slate-500 mb-4">
+            Prepara invitaciones para lanzamientos, actividades gratuitas o mensajes para la comunidad.
+            <span className="block mt-1 text-amber-600">🌟 El envío automático estará disponible próximamente.</span>
+          </p>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Destinatarios</label>
+              <select
+                value={messageTarget}
+                onChange={e => setMessageTarget(e.target.value)}
+                className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+              >
+                <option value="all">Todos los registrados</option>
+                <option value="active">Alumnos con acceso vigente</option>
+                <option value="premium">Alumnos premium</option>
+                <option value="course">Alumnos de un curso específico</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Asunto</label>
+              <input
+                type="text"
+                value={messageSubject}
+                onChange={e => setMessageSubject(e.target.value)}
+                placeholder="Ej: Nueva actividad gratuita..."
+                className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Mensaje</label>
+              <textarea
+                value={messageBody}
+                onChange={e => setMessageBody(e.target.value)}
+                rows={5}
+                placeholder="Escribe aquí el mensaje..."
+                className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+              />
+            </div>
+            <div className="flex items-center gap-4 pt-2">
+              <button disabled className="bg-slate-300 text-slate-500 px-6 py-2 rounded-lg cursor-not-allowed font-medium">
+                Enviar invitación consciente
+              </button>
+              <span className="text-xs text-slate-400">El envío se activará cuando integremos el servicio de correo.</span>
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </div>
+  )
+}
+
+export default Admin

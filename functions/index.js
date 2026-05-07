@@ -11,8 +11,6 @@ const RESEND_API_KEY = defineSecret('RESEND_API_KEY')
 // HELPERS
 // ─────────────────────────────────────────────
 
-// Verificar admin usando el custom claim del token JWT
-// — más eficiente que leer Firestore y es la fuente de verdad correcta
 const verifyAdmin = async (request) => {
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'Debes iniciar sesión')
@@ -32,7 +30,6 @@ const calcPremiumExpiry = (duration) => {
 const sendEmail = async (apiKey, { to, subject, html }) => {
   const { Resend } = require('resend')
   const resend = new Resend(apiKey)
-  // Controlado por variable de entorno — false en producción, true en desarrollo
   const TEST_MODE = process.env.EMAIL_TEST_MODE === 'true'
   const recipient = TEST_MODE ? 'tierraevolucion@gmail.com' : to
   try {
@@ -127,7 +124,6 @@ exports.setAdminRole = onCall(
     }
 
     console.log('Rol admin asignado a ' + email)
-    // passwordLink NO se devuelve al cliente — ya fue enviado por email
     return { success: true, email, uid: authUser.uid }
   }
 )
@@ -215,11 +211,12 @@ exports.createCheckoutSession = onCall(async (request) => {
           back_urls: {
             success: appUrl + '/pago-exitoso?provider=mercadopago',
             failure: appUrl + '/suscribirse',
-                      },
-          notification_url: appUrl + '/api/mercadopago/webhook',
+            pending: appUrl + '/suscribirse',
+          },
+          auto_return: 'approved',
+          external_reference: userId + '_' + type + '_' + (courseId || 'premium') + '_' + Date.now(),
         },
       })
-
       return { url: response.init_point }
     }
 
@@ -227,5 +224,227 @@ exports.createCheckoutSession = onCall(async (request) => {
   } catch (error) {
     console.error('Error creando sesión de checkout:', error)
     throw new HttpsError('internal', error.message || 'Error al crear la sesión')
+  }
+})
+
+// ─────────────────────────────────────────────
+// 4. VERIFICAR Y APLICAR ACCESO
+// ─────────────────────────────────────────────
+
+exports.verifyAndGrantAccess = onCall(async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Debes iniciar sesión')
+
+  const { sessionId, provider } = request.data
+  const userId = request.auth.uid
+  let metadata = {}
+
+  const processedRef = db.doc(`processedPayments/${sessionId}`)
+  const alreadyProcessed = await processedRef.get()
+  if (alreadyProcessed.exists) {
+    return alreadyProcessed.data().result
+  }
+
+  try {
+    if (provider === 'stripe') {
+      const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY)
+      const session = await stripe.checkout.sessions.retrieve(sessionId)
+      if (session.payment_status !== 'paid')
+        throw new HttpsError('failed-precondition', 'Pago no completado')
+      if (session.metadata.userId !== userId)
+        throw new HttpsError('permission-denied', 'Sesión no corresponde a tu usuario')
+      metadata = session.metadata
+    }
+
+    if (provider === 'mercadopago') {
+      const { MercadoPagoConfig, Payment } = require('mercadopago')
+      const mp = new MercadoPagoConfig({ accessToken: process.env.MERCADOPAGO_ACCESS_TOKEN })
+      const payment = await new Payment(mp).get({ id: sessionId })
+      if (payment.status !== 'approved')
+        throw new HttpsError('failed-precondition', 'Pago no aprobado')
+      if (payment.metadata?.userId !== userId)
+        throw new HttpsError('permission-denied', 'Pago no corresponde a tu usuario')
+      metadata = payment.metadata
+    }
+  } catch (e) {
+    if (e instanceof HttpsError) throw e
+    console.error('Error verificando pago:', e)
+    throw new HttpsError('internal', 'Error al verificar el pago')
+  }
+
+  const type = metadata.type
+  const courseId = metadata.courseId
+  const duration = metadata.duration || '1y'
+  const userRef = db.doc('users/' + userId)
+
+  let result
+
+  if (type === 'course' && courseId) {
+    await userRef.update({
+      enrolledCourses: admin.firestore.FieldValue.arrayUnion(courseId),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    })
+    result = { success: true, type: 'course', courseId }
+  } else if (type === 'premium') {
+    const expiry = calcPremiumExpiry(duration)
+    await userRef.update({
+      accessType: 'all',
+      premiumExpiry: admin.firestore.Timestamp.fromDate(expiry),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    })
+    result = { success: true, type: 'premium', expiresAt: expiry.toISOString() }
+  } else {
+    throw new HttpsError('invalid-argument', 'Tipo de pago no reconocido')
+  }
+
+  await processedRef.set({
+    result,
+    userId,
+    processedAt: admin.firestore.FieldValue.serverTimestamp(),
+  })
+
+  return result
+})
+
+// ─────────────────────────────────────────────
+// 5. ALTA MANUAL DE ALUMNO
+// ─────────────────────────────────────────────
+
+exports.enrollStudentManually = onCall(
+  { secrets: [RESEND_API_KEY] },
+  async (request) => {
+    await verifyAdmin(request)
+
+    const { email, type, courseId, duration } = request.data
+    const dur = duration || '1y'
+    if (!email) throw new HttpsError('invalid-argument', 'Email requerido')
+    if (!['course', 'premium'].includes(type)) throw new HttpsError('invalid-argument', 'Tipo inválido')
+    if (type === 'course' && !courseId) throw new HttpsError('invalid-argument', 'courseId requerido')
+
+    let authUser
+    let isNewUser = false
+    try {
+      authUser = await admin.auth().getUserByEmail(email)
+    } catch (e) {
+      authUser = await admin.auth().createUser({ email })
+      await admin.auth().setCustomUserClaims(authUser.uid, { role: 'student' })
+      isNewUser = true
+    }
+
+    const userRef = db.doc('users/' + authUser.uid)
+    const userSnap = await userRef.get()
+
+    if (!userSnap.exists) {
+      await userRef.set({
+        email,
+        name: '',
+        role: 'student',
+        accessType: type === 'premium' ? 'all' : 'limited',
+        enrolledCourses: type === 'course' && courseId ? [courseId] : [],
+        premiumExpiry: type === 'premium'
+          ? admin.firestore.Timestamp.fromDate(calcPremiumExpiry(dur))
+          : null,
+        subscriptionStatus: 'manual',
+        enrolledManually: true,
+        enrolledByAdmin: request.auth.uid,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      })
+    } else {
+      const update = { updatedAt: admin.firestore.FieldValue.serverTimestamp() }
+      if (type === 'course' && courseId) {
+        update.enrolledCourses = admin.firestore.FieldValue.arrayUnion(courseId)
+      }
+      if (type === 'premium') {
+        update.accessType = 'all'
+        update.premiumExpiry = admin.firestore.Timestamp.fromDate(calcPremiumExpiry(dur))
+      }
+      await userRef.update(update)
+    }
+
+    let passwordLink = null
+    try {
+      passwordLink = await admin.auth().generatePasswordResetLink(email)
+    } catch (e) {
+      console.warn('No se pudo generar link: ' + e.message)
+    }
+
+    if (passwordLink) {
+      await sendEmail(RESEND_API_KEY.value(), {
+        to: email,
+        subject: 'Tu acceso a Espacio Sagrado está listo',
+        html: '<div style="font-family:sans-serif;padding:32px"><h1 style="color:#4f46e5">Tu espacio te espera</h1><p>Se te ha dado acceso en Espacio Sagrado.</p><a href="' + passwordLink + '" style="background:#4f46e5;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;display:inline-block;margin-top:16px">' + (isNewUser ? 'Crear contraseña y entrar' : 'Entrar al espacio') + '</a><p style="color:#94a3b8;font-size:14px;margin-top:32px">Este enlace expira en 24 horas.</p></div>',
+      })
+    }
+
+    return { success: true, uid: authUser.uid, email, type }
+  }
+)
+
+// ─────────────────────────────────────────────
+// 6. REVOCAR ACCESO
+// ─────────────────────────────────────────────
+
+exports.revokeStudentAccess = onCall(async (request) => {
+  await verifyAdmin(request)
+
+  const { uid, courseId } = request.data
+  if (!uid) throw new HttpsError('invalid-argument', 'UID requerido')
+
+  const userRef = db.doc('users/' + uid)
+  const userSnap = await userRef.get()
+  if (!userSnap.exists) throw new HttpsError('not-found', 'Usuario no encontrado')
+
+  await userRef.update({
+    accessType: 'limited',
+    premiumExpiry: null,
+    enrolledCourses: [],
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  })
+
+  return { success: true, uid, revokedAll: true }
+})
+
+// ─────────────────────────────────────────────
+// 7. ELIMINAR CUENTA COMPLETA
+// ─────────────────────────────────────────────
+
+exports.deleteUserAccount = onRequest(async (req, res) => {
+  const allowedOrigins = [
+    'https://espacio-sagrado.web.app',
+    'http://localhost:5173',
+    'http://localhost:4173',
+  ]
+  const origin = req.headers.origin
+  if (allowedOrigins.includes(origin)) {
+    res.set('Access-Control-Allow-Origin', origin)
+  }
+  res.set('Access-Control-Allow-Methods', 'POST, OPTIONS')
+  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+
+  if (req.method === 'OPTIONS') { res.status(204).send(''); return }
+
+  try {
+    const authHeader = req.headers.authorization
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      res.status(401).json({ error: 'No autenticado' }); return
+    }
+
+    const decoded = await admin.auth().verifyIdToken(authHeader.split('Bearer ')[1])
+    if (decoded.role !== 'admin') {
+      res.status(403).json({ error: 'Solo administradores' }); return
+    }
+
+    const { uid } = req.body
+    if (!uid) { res.status(400).json({ error: 'UID requerido' }); return }
+
+    try { await admin.auth().deleteUser(uid) } catch (e) {
+      console.log('Usuario ' + uid + ' no encontrado en Auth, continuando')
+    }
+    await db.doc('users/' + uid).delete()
+
+    res.json({ success: true, uid })
+  } catch (e) {
+    console.error('Error en deleteUserAccount:', e)
+    res.status(500).json({ error: e.message })
   }
 })

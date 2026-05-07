@@ -1,44 +1,33 @@
-import { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
-import { useSession } from "../hooks/useSession";
-import { getCourses } from "../services/courseService";
-import { getSettings } from "../services/settingsService";
-import Hero3D from "../components/Hero3D";
+import { useState, useEffect } from "react"
+import { Link } from "react-router-dom"
+import { useSession } from "../hooks/useSession"
+import { useSettings } from "../context/SettingsContext"
+import { getCourses } from "../services/courseService"
+import Hero3D from "../components/Hero3D"
 
 function Dashboard() {
-  const { user, canAccessCourse, loading: sessionLoading } = useSession();
-  const [courses, setCourses] = useState([]);
-  const [loadingCourses, setLoadingCourses] = useState(true);
-  const [settings, setSettings] = useState({
-    schoolName: "Luz y Consciencia",
-    heroPhrase: "Un espacio para recordar quién eres",
-    logoUrl: ""
-  });
+  const { user, canAccessCourse, loading: sessionLoading } = useSession()
+  const { settings } = useSettings()
+  const [courses, setCourses] = useState([])
+  const [loadingCourses, setLoadingCourses] = useState(true)
+
+  // El título de la última lección ya viene guardado en Firestore
+  // desde Lesson.jsx — no necesita consulta adicional
+  const lastLessonTitle = user?.lastLessonTitle || null
 
   useEffect(() => {
-    getSettings().then(setSettings);
-  }, []);
-
-  useEffect(() => {
-    const loadCourses = async () => {
-      try {
-        const data = await getCourses();
-        setCourses(data || []);
-      } catch (error) {
-        console.error("Error cargando cursos:", error);
-      } finally {
-        setLoadingCourses(false);
-      }
-    };
-    loadCourses();
-  }, []);
+    getCourses()
+      .then((data) => setCourses(data || []))
+      .catch((err) => console.error("Error cargando cursos:", err))
+      .finally(() => setLoadingCourses(false))
+  }, [])
 
   if (sessionLoading || loadingCourses) {
     return (
       <div className="flex justify-center items-center h-64">
         <div className="animate-spin h-12 w-12 border-4 border-indigo-600 border-t-transparent rounded-full" />
       </div>
-    );
+    )
   }
 
   return (
@@ -63,7 +52,7 @@ function Dashboard() {
           )}
         </section>
 
-        {/* HILO DE LUZ — acceso rápido a última lección visitada */}
+        {/* HILO DE LUZ — última lección visitada */}
         {user?.lastLessonId ? (
           <section className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
             <div className="flex items-center gap-3">
@@ -71,14 +60,18 @@ function Dashboard() {
               <div>
                 <p className="text-slate-600">
                   La última vez tu consciencia se detuvo en{" "}
-                  <span className="font-semibold text-indigo-700">{user.lastLessonId}</span>.
+                  <span className="font-semibold text-indigo-700">
+                    {lastLessonTitle || "una lección"}
+                  </span>.
                 </p>
-                <p className="text-sm text-slate-400 mt-1">Cuando sientas el llamado, la puerta está abierta.</p>
+                <p className="text-sm text-slate-400 mt-1">
+                  Cuando sientas el llamado, la puerta está abierta.
+                </p>
                 <Link
                   to={`/course/${user.lastCourseId}/lesson/${user.lastLessonId}`}
                   className="mt-3 inline-block text-indigo-600 hover:text-indigo-800 font-medium transition"
                 >
-                  Visitar esa lección →
+                  Volver a esa lección →
                 </Link>
               </div>
             </div>
@@ -97,16 +90,27 @@ function Dashboard() {
           <h2 className="text-2xl font-semibold text-slate-700 mb-4">Cursos disponibles</h2>
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
             {courses.map((course) => {
-              // Acceso desde Firestore únicamente
               const hasAccess = user && canAccessCourse(course.id)
-
               return (
-                <div key={course.id} className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 hover:shadow-md transition group">
+                <div
+                  key={course.id}
+                  className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 hover:shadow-md transition group"
+                >
                   {course.imagen_url && (
-                    <img src={course.imagen_url} alt={course.titulo || 'Curso'} className="w-full h-40 object-cover rounded-lg mb-4" loading="lazy" />
+                    <img
+                      src={course.imagen_url}
+                      alt={course.titulo || 'Curso'}
+                      className="w-full h-40 object-cover rounded-lg mb-4"
+                      loading="lazy"
+                      onError={(e) => { e.target.style.display = 'none' }}
+                    />
                   )}
-                  <h3 className="text-lg font-semibold text-slate-800">{course.titulo || course.title || 'Curso'}</h3>
-                  <p className="text-sm text-slate-500 mt-1 line-clamp-2">{course.descripcion || "Un curso para expandir tu conciencia."}</p>
+                  <h3 className="text-lg font-semibold text-slate-800">
+                    {course.titulo || course.title || 'Curso'}
+                  </h3>
+                  <p className="text-sm text-slate-500 mt-1 line-clamp-2">
+                    {course.descripcion || "Un curso para expandir tu conciencia."}
+                  </p>
                   <div className="mt-4">
                     <Link
                       to={`/course/${course.id}`}
@@ -120,7 +124,7 @@ function Dashboard() {
                     </Link>
                   </div>
                 </div>
-              );
+              )
             })}
           </div>
         </section>
@@ -132,14 +136,22 @@ function Dashboard() {
           <p className="mt-3 text-indigo-100 text-lg max-w-xl mx-auto">
             Desbloquea todos los cursos, presentes y futuros, y camina sin límites en tu viaje de consciencia.
           </p>
-          <p className="mt-2 text-indigo-200 text-sm">Renovación semestral o anual. Tú eliges tu ritmo.</p>
+          <p className="mt-2 text-indigo-200 text-sm">
+            Renovación semestral o anual. Tú eliges tu ritmo.
+          </p>
           <div className="mt-8">
             {user ? (
-              <Link to="/checkout?type=premium" className="inline-block bg-white text-indigo-700 px-8 py-3 rounded-xl font-semibold hover:bg-indigo-50 transition shadow-md">
+              <Link
+                to="/checkout?type=premium"
+                className="inline-block bg-white text-indigo-700 px-8 py-3 rounded-xl font-semibold hover:bg-indigo-50 transition shadow-md"
+              >
                 Actualizar a premium
               </Link>
             ) : (
-              <Link to="/registro?redirect=/checkout?type=premium" className="inline-block bg-white text-indigo-700 px-8 py-3 rounded-xl font-semibold hover:bg-indigo-50 transition shadow-md">
+              <Link
+                to="/registro?redirect=/checkout?type=premium"
+                className="inline-block bg-white text-indigo-700 px-8 py-3 rounded-xl font-semibold hover:bg-indigo-50 transition shadow-md"
+              >
                 Unirme al acceso total
               </Link>
             )}
@@ -152,9 +164,14 @@ function Dashboard() {
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-xl font-semibold text-slate-700">👑 Panel del Guardián</h2>
-                <p className="text-sm text-slate-500 mt-1">Gestiona cursos, módulos, lecciones y alumnos.</p>
+                <p className="text-sm text-slate-500 mt-1">
+                  Gestiona cursos, módulos, lecciones y alumnos.
+                </p>
               </div>
-              <Link to="/admin" className="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 transition font-medium">
+              <Link
+                to="/admin"
+                className="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 transition font-medium"
+              >
                 Ir al panel
               </Link>
             </div>
@@ -163,7 +180,7 @@ function Dashboard() {
 
       </div>
     </div>
-  );
+  )
 }
 
-export default Dashboard;
+export default Dashboard

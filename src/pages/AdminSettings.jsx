@@ -1,46 +1,27 @@
-import { useEffect, useState } from 'react'
-import { getSettings, updateSettings } from '../services/settingsService'
+import { useState } from 'react'
+import { updateSettings } from '../services/settingsService'
+import { useSettings } from '../context/SettingsContext'
 import { useToast } from '../hooks/useToast'
 import Toast from '../components/Toast'
 
 function AdminSettings() {
-  const [settings, setSettings] = useState({
-    schoolName: '',
-    heroPhrase: '',
-    logoUrl: ''
-  })
+  const { settings: contextSettings, refreshSettings } = useSettings()
+  const [settings, setSettings] = useState(contextSettings)
   const [saving, setSaving] = useState(false)
   const { toast, showToast, clearToast } = useToast()
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    const load = async () => {
-      const data = await getSettings()
-      setSettings(data)
-      setLoading(false)
-    }
-    load()
-  }, [])
 
   const handleSave = async (e) => {
     e.preventDefault()
     setSaving(true)
     try {
       await updateSettings(settings)
-      showToast('✅ Configuración guardada con amor', 'success')
+      await refreshSettings() // actualiza el contexto global (Navbar, Dashboard, etc.)
+      showToast('✅ Configuración guardada', 'success')
     } catch {
       showToast('Error al guardar', 'error')
     } finally {
       setSaving(false)
     }
-  }
-
-  if (loading) {
-    return (
-      <div className="flex justify-center items-center h-64">
-        <div className="animate-spin h-12 w-12 border-4 border-indigo-600 border-t-transparent rounded-full" />
-      </div>
-    )
   }
 
   return (
@@ -55,7 +36,6 @@ function AdminSettings() {
           <Toast message={toast.message} type={toast.type} onClose={clearToast} />
 
           <form onSubmit={handleSave} className="space-y-5">
-            {/* Nombre */}
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">
                 Nombre de la escuela
@@ -63,15 +43,12 @@ function AdminSettings() {
               <input
                 type="text"
                 value={settings.schoolName}
-                onChange={(e) =>
-                  setSettings({ ...settings, schoolName: e.target.value })
-                }
-                className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                onChange={(e) => setSettings({ ...settings, schoolName: e.target.value })}
+                className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
                 placeholder="Ej: Luz y Consciencia"
               />
             </div>
 
-            {/* Logo URL */}
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">
                 URL del logo
@@ -79,10 +56,8 @@ function AdminSettings() {
               <input
                 type="url"
                 value={settings.logoUrl}
-                onChange={(e) =>
-                  setSettings({ ...settings, logoUrl: e.target.value })
-                }
-                className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                onChange={(e) => setSettings({ ...settings, logoUrl: e.target.value })}
+                className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
                 placeholder="https://ejemplo.com/logo.png"
               />
               {settings.logoUrl && (
@@ -91,29 +66,26 @@ function AdminSettings() {
                     src={settings.logoUrl}
                     alt="vista previa"
                     className="h-12 w-12 object-contain rounded-lg border border-slate-200"
+                    onError={(e) => { e.target.style.display = 'none' }}
                   />
                   <span className="text-xs text-slate-400">Vista previa</span>
                 </div>
               )}
             </div>
 
-            {/* Frase hero */}
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">
-                Frase principal (Hero)
+                Frase principal
               </label>
               <textarea
                 value={settings.heroPhrase}
-                onChange={(e) =>
-                  setSettings({ ...settings, heroPhrase: e.target.value })
-                }
+                onChange={(e) => setSettings({ ...settings, heroPhrase: e.target.value })}
                 rows={3}
-                className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
                 placeholder="Un espacio para recordar quién eres"
               />
             </div>
 
-            {/* Botón guardar */}
             <button
               type="submit"
               disabled={saving}

@@ -8,16 +8,19 @@ import Toast from '../components/Toast'
 function Subscribe() {
   const { user, canAccessCourse, loading: sessionLoading } = useSession()
   const [courses, setCourses] = useState([])
+  const [loadingCourses, setLoadingCourses] = useState(true)
   const navigate = useNavigate()
   const { toast, showToast, clearToast } = useToast()
 
   useEffect(() => {
-    getCourses().then(setCourses)
+    getCourses()
+      .then(setCourses)
+      .catch(() => showToast('Error al cargar los cursos. Intenta de nuevo.', 'error'))
+      .finally(() => setLoadingCourses(false))
   }, [])
 
   const handleEnroll = (courseId) => {
     if (!user) {
-      showToast('Debes iniciar sesión primero', 'warning')
       navigate('/login')
       return
     }
@@ -26,14 +29,13 @@ function Subscribe() {
 
   const handlePremium = () => {
     if (!user) {
-      showToast('Debes iniciar sesión', 'warning')
       navigate('/login')
       return
     }
     navigate('/checkout?type=premium')
   }
 
-  if (sessionLoading) {
+  if (sessionLoading || loadingCourses) {
     return (
       <div className="flex justify-center items-center h-64">
         <div className="animate-spin h-10 w-10 border-4 border-indigo-600 border-t-transparent rounded-full" />
@@ -50,21 +52,24 @@ function Subscribe() {
         Elige un curso o suscríbete al plan premium para acceso completo.
       </p>
 
-      {/* CURSOS */}
+      {courses.length === 0 && !loadingCourses && (
+        <p className="text-slate-400 text-center py-16">
+          No hay cursos disponibles en este momento.
+        </p>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {courses.map(course => {
-          // Acceso determinado únicamente por Firestore vía contexto
           const hasAccess = user && canAccessCourse(course.id)
-
           return (
             <div key={course.id} className="bg-white rounded-2xl shadow-md p-5 border border-slate-100">
-
               {course.imagen_url ? (
                 <img
                   src={course.imagen_url}
                   alt={course.titulo || 'Curso'}
                   className="w-full h-40 object-cover rounded-lg mb-4"
                   loading="lazy"
+                  onError={(e) => { e.target.style.display = 'none' }}
                 />
               ) : (
                 <div className="w-full h-40 bg-gradient-to-br from-indigo-100 to-purple-100 rounded-lg mb-4 flex items-center justify-center">
@@ -75,7 +80,6 @@ function Subscribe() {
               <h3 className="text-lg font-semibold text-slate-800">
                 {course.titulo || course.title || 'Curso en preparación'}
               </h3>
-
               <p className="text-slate-600 text-sm mt-2 line-clamp-2">
                 {course.descripcion || 'Un curso para expandir tu conciencia.'}
               </p>
@@ -96,7 +100,6 @@ function Subscribe() {
                     Inscribirme
                   </button>
                 )}
-
                 {!user && (
                   <Link
                     to="/login"

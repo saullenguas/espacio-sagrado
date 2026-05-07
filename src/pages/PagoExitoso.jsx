@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useSearchParams, Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { verifyAndGrantAccess } from '../services/paymentService'
-import { doc, setDoc, getDoc, arrayUnion } from 'firebase/firestore'
+import { doc, setDoc, getDoc, updateDoc, arrayUnion } from 'firebase/firestore'
 import { db } from '../firebase/config'
 
 const PAYMENT_MODE = import.meta.env.VITE_PAYMENT_MODE || 'simulation'
@@ -16,15 +16,28 @@ const grantAccessSimulated = async (userId, metadata) => {
     await setDoc(userRef, {
       email: metadata.email || '',
       role: 'student',
-      enrolledCourses: [],
-      accessType: 'limited',
+      enrolledCourses: type === 'course' && courseId ? [courseId] : [],
+      accessType: type === 'premium' ? 'all' : 'limited',
       premiumExpiry: null,
       createdAt: new Date(),
     })
+
+    if (type === 'premium') {
+      const expiry = new Date()
+      if (duration === '6m') expiry.setMonth(expiry.getMonth() + 6)
+      else expiry.setFullYear(expiry.getFullYear() + 1)
+      await updateDoc(userRef, { premiumExpiry: expiry })
+      return { type: 'premium', expiresAt: expiry }
+    }
+
+    return { type: 'course', courseId }
   }
 
+  // Documento existe — usar updateDoc con arrayUnion
   if (type === 'course' && courseId) {
-    await setDoc(userRef, { enrolledCourses: arrayUnion(courseId) }, { merge: true })
+    await updateDoc(userRef, {
+      enrolledCourses: arrayUnion(courseId)
+    })
     return { type: 'course', courseId }
   }
 
@@ -32,7 +45,10 @@ const grantAccessSimulated = async (userId, metadata) => {
     const expiry = new Date()
     if (duration === '6m') expiry.setMonth(expiry.getMonth() + 6)
     else expiry.setFullYear(expiry.getFullYear() + 1)
-    await setDoc(userRef, { accessType: 'all', premiumExpiry: expiry }, { merge: true })
+    await updateDoc(userRef, {
+      accessType: 'all',
+      premiumExpiry: expiry
+    })
     return { type: 'premium', expiresAt: expiry }
   }
 
@@ -76,6 +92,9 @@ function PagoExitoso() {
         throw new Error('No se encontraron datos de pago')
       }
 
+      // Esperar a que Firestore propague y refrescar el contexto dos veces
+      await refreshUser()
+      await new Promise(r => setTimeout(r, 500))
       await refreshUser()
 
       if (result.type === 'course') {

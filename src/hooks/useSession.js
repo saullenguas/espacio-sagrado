@@ -1,28 +1,32 @@
-import { useMemo } from "react";
-import { useAuth } from "./useAuth";
-import { canAccessCourse as checkAccess, isPremiumActive, hasFullAccess } from "../domain/userModel";
+import { useMemo, useCallback } from "react"
+import { useAuth } from "./useAuth"
+import {
+  canAccessCourse as checkAccess,
+  isPremiumActive,
+  hasFullAccess,
+} from "../domain/userModel"
 
 export function useSession() {
-  const { user, loading, refreshUser } = useAuth();
+  const { user, loading, refreshUser } = useAuth()
 
-  // Datos del usuario normalizados desde Firestore (via AuthProvider)
-  // No se mezcla con localStorage ni fuentes externas
   const safeUser = useMemo(() => {
-    if (!user) return null;
+    if (!user) return null
     return {
       ...user,
       role: user.role || "student",
       accessType: user.accessType || "limited",
       enrolledCourses: user.enrolledCourses || [],
-    };
-  }, [user]);
+    }
+  }, [user])
 
-  // Acceso a curso — fuente de verdad: Firestore únicamente
-  const canAccessCourse = (courseId) => checkAccess(safeUser, courseId);
+  const canAccessCourse = useCallback(
+    (courseId) => checkAccess(safeUser, courseId),
+    [safeUser]
+  )
 
-  const isPremium = isPremiumActive(safeUser);
-  const isAdmin = safeUser?.role === "admin";
-  const hasAll = hasFullAccess(safeUser);
+  const isPremium = isPremiumActive(safeUser)
+  const isAdmin = safeUser?.role === "admin"
+  const hasAll = hasFullAccess(safeUser)
 
   return {
     user: safeUser,
@@ -32,5 +36,5 @@ export function useSession() {
     isPremium,
     isAdmin,
     hasFullAccess: hasAll,
-  };
+  }
 }
