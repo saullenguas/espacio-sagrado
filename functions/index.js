@@ -1,12 +1,15 @@
 const { onCall, onRequest, HttpsError } = require('firebase-functions/v2/https')
 const { onDocumentCreated } = require('firebase-functions/v2/firestore')
+const { onSchedule } = require('firebase-functions/v2/scheduler')
 const { defineSecret } = require('firebase-functions/params')
 const admin = require('firebase-admin')
 admin.initializeApp()
 
 const db = admin.firestore()
 const RESEND_API_KEY = defineSecret('RESEND_API_KEY')
-
+const STRIPE_SECRET_KEY = defineSecret('STRIPE_SECRET_KEY')
+const MERCADOPAGO_ACCESS_TOKEN = defineSecret('MERCADOPAGO_ACCESS_TOKEN')
+const MERCADOPAGO_WEBHOOK_SECRET = defineSecret('MERCADOPAGO_WEBHOOK_SECRET')
 // ─────────────────────────────────────────────
 // HELPERS
 // ─────────────────────────────────────────────
@@ -132,178 +135,184 @@ exports.setAdminRole = onCall(
 // 3. PAGOS — CREAR SESIÓN DE CHECKOUT
 // ─────────────────────────────────────────────
 
-exports.createCheckoutSession = onCall(async (request) => {
-  if (!request.auth) throw new HttpsError('unauthenticated', 'Debes iniciar sesión')
+exports.createCheckoutSession = onCall(
+  { secrets: [STRIPE_SECRET_KEY, MERCADOPAGO_ACCESS_TOKEN] },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Debes iniciar sesión')
 
-  const { provider, type, courseId, currency, duration } = request.data
-  const curr = currency || 'mxn'
-  const dur = duration || '1y'
-  const userId = request.auth.uid
-  const email = request.auth.token.email
+    const { provider, type, courseId, currency, duration } = request.data
+    const curr = currency || 'mxn'
+    const dur = duration || '1y'
+    const userId = request.auth.uid
+    const email = request.auth.token.email
 
-  if (!['stripe', 'mercadopago'].includes(provider))
-    throw new HttpsError('invalid-argument', 'Proveedor no válido')
-  if (!['course', 'premium'].includes(type))
-    throw new HttpsError('invalid-argument', 'Tipo no válido')
-  if (type === 'course' && !courseId)
-    throw new HttpsError('invalid-argument', 'courseId requerido')
+    if (!['stripe', 'mercadopago'].includes(provider))
+      throw new HttpsError('invalid-argument', 'Proveedor no válido')
+    if (!['course', 'premium'].includes(type))
+      throw new HttpsError('invalid-argument', 'Tipo no válido')
+    if (type === 'course' && !courseId)
+      throw new HttpsError('invalid-argument', 'courseId requerido')
 
-  const appUrl = process.env.APP_URL || 'https://espacio-sagrado.web.app'
+    const appUrl = process.env.APP_URL || 'https://espacio-sagrado.web.app'
 
-  try {
-    if (provider === 'stripe') {
-      const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY)
-      const STRIPE_PRICES = {
-        course: { usd: 1500, mxn: 30000, eur: 1400 },
-        premium: {
-          '1y': { usd: 9900, mxn: 199000, eur: 9200 },
-          '6m': { usd: 5900, mxn: 119000, eur: 5500 },
-        },
-      }
-      const unitAmount = type === 'premium'
-        ? STRIPE_PRICES.premium[dur][curr]
-        : STRIPE_PRICES.course[curr]
-
-      const session = await stripe.checkout.sessions.create({
-        payment_method_types: ['card'],
-        mode: 'payment',
-        customer_email: email,
-        line_items: [{
-          price_data: {
-            currency: curr,
-            unit_amount: unitAmount,
-            product_data: { name: 'Espacio Sagrado' },
+    try {
+      if (provider === 'stripe') {
+        const stripe = require('stripe')(STRIPE_SECRET_KEY.value())
+        const STRIPE_PRICES = {
+          course: { usd: 1500, mxn: 30000, eur: 1400 },
+          premium: {
+            '1y': { usd: 9900, mxn: 199000, eur: 9200 },
+            '6m': { usd: 5900, mxn: 119000, eur: 5500 },
           },
-          quantity: 1,
-        }],
-        metadata: { userId, type, courseId: courseId || '', duration: dur },
-        success_url: appUrl + '/pago-exitoso?session_id={CHECKOUT_SESSION_ID}&provider=stripe',
-        cancel_url: appUrl + '/suscribirse',
-      })
-      return { url: session.url }
-    }
+        }
+        const unitAmount = type === 'premium'
+          ? STRIPE_PRICES.premium[dur][curr]
+          : STRIPE_PRICES.course[curr]
 
-    if (provider === 'mercadopago') {
-      const { MercadoPagoConfig, Preference } = require('mercadopago')
-      const mp = new MercadoPagoConfig({ accessToken: process.env.MERCADOPAGO_ACCESS_TOKEN })
-      const MP_PRICES = {
-        course: { mxn: 300, usd: 15, eur: 14 },
-        premium: {
-          '1y': { mxn: 1990, usd: 99, eur: 92 },
-          '6m': { mxn: 1190, usd: 59, eur: 55 },
-        },
-      }
-      const unitPrice = type === 'premium'
-        ? MP_PRICES.premium[dur][curr]
-        : MP_PRICES.course[curr]
-
-      const preference = new Preference(mp)
-      const response = await preference.create({
-        body: {
-          items: [{
-            title: 'Espacio Sagrado',
-            unit_price: unitPrice,
+        const session = await stripe.checkout.sessions.create({
+          payment_method_types: ['card'],
+          mode: 'payment',
+          customer_email: email,
+          line_items: [{
+            price_data: {
+              currency: curr,
+              unit_amount: unitAmount,
+              product_data: { name: 'Espacio Sagrado' },
+            },
             quantity: 1,
-            currency_id: curr.toUpperCase(),
           }],
-          payer: { email },
           metadata: { userId, type, courseId: courseId || '', duration: dur },
-          back_urls: {
-            success: appUrl + '/pago-exitoso?provider=mercadopago',
-            failure: appUrl + '/suscribirse',
-            pending: appUrl + '/suscribirse',
-          },
-          auto_return: 'approved',
-          external_reference: userId + '_' + type + '_' + (courseId || 'premium') + '_' + Date.now(),
-        },
-      })
-      return { url: response.init_point }
-    }
+          success_url: appUrl + '/pago-exitoso?session_id={CHECKOUT_SESSION_ID}&provider=stripe',
+          cancel_url: appUrl + '/suscribirse',
+        })
+        return { url: session.url }
+      }
 
-    throw new HttpsError('internal', 'Proveedor no implementado')
-  } catch (error) {
-    console.error('Error creando sesión de checkout:', error)
-    throw new HttpsError('internal', error.message || 'Error al crear la sesión')
+      if (provider === 'mercadopago') {
+        const { MercadoPagoConfig, Preference } = require('mercadopago')
+        const mp = new MercadoPagoConfig({ accessToken: MERCADOPAGO_ACCESS_TOKEN.value() })
+        const MP_PRICES = {
+          course: { mxn: 300, usd: 15, eur: 14 },
+          premium: {
+            '1y': { mxn: 1990, usd: 99, eur: 92 },
+            '6m': { mxn: 1190, usd: 59, eur: 55 },
+          },
+        }
+        const unitPrice = type === 'premium'
+          ? MP_PRICES.premium[dur][curr]
+          : MP_PRICES.course[curr]
+
+        const preference = new Preference(mp)
+        const response = await preference.create({
+          body: {
+            items: [{
+              title: 'Espacio Sagrado',
+              unit_price: unitPrice,
+              quantity: 1,
+              currency_id: curr.toUpperCase(),
+            }],
+            payer: { email },
+            metadata: { userId, type, courseId: courseId || '', duration: dur },
+            back_urls: {
+              success: appUrl + '/pago-exitoso?provider=mercadopago',
+              failure: appUrl + '/suscribirse',
+              pending: appUrl + '/suscribirse',
+            },
+            auto_return: 'approved',
+            external_reference: userId + '_' + type + '_' + (courseId || 'premium') + '_' + Date.now(),
+          },
+        })
+        return { url: response.init_point }
+      }
+
+      throw new HttpsError('internal', 'Proveedor no implementado')
+    } catch (error) {
+      console.error('Error creando sesión de checkout:', error)
+      throw new HttpsError('internal', error.message || 'Error al crear la sesión')
+    }
   }
-})
+)
 
 // ─────────────────────────────────────────────
 // 4. VERIFICAR Y APLICAR ACCESO
 // ─────────────────────────────────────────────
 
-exports.verifyAndGrantAccess = onCall(async (request) => {
-  if (!request.auth) throw new HttpsError('unauthenticated', 'Debes iniciar sesión')
+exports.verifyAndGrantAccess = onCall(
+  { secrets: [STRIPE_SECRET_KEY, MERCADOPAGO_ACCESS_TOKEN] },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Debes iniciar sesión')
 
-  const { sessionId, provider } = request.data
-  const userId = request.auth.uid
-  let metadata = {}
+    const { sessionId, provider } = request.data
+    const userId = request.auth.uid
+    let metadata = {}
 
-  const processedRef = db.doc(`processedPayments/${sessionId}`)
-  const alreadyProcessed = await processedRef.get()
-  if (alreadyProcessed.exists) {
-    return alreadyProcessed.data().result
-  }
-
-  try {
-    if (provider === 'stripe') {
-      const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY)
-      const session = await stripe.checkout.sessions.retrieve(sessionId)
-      if (session.payment_status !== 'paid')
-        throw new HttpsError('failed-precondition', 'Pago no completado')
-      if (session.metadata.userId !== userId)
-        throw new HttpsError('permission-denied', 'Sesión no corresponde a tu usuario')
-      metadata = session.metadata
+    const processedRef = db.doc(`processedPayments/${sessionId}`)
+    const alreadyProcessed = await processedRef.get()
+    if (alreadyProcessed.exists) {
+      return alreadyProcessed.data().result
     }
 
-    if (provider === 'mercadopago') {
-      const { MercadoPagoConfig, Payment } = require('mercadopago')
-      const mp = new MercadoPagoConfig({ accessToken: process.env.MERCADOPAGO_ACCESS_TOKEN })
-      const payment = await new Payment(mp).get({ id: sessionId })
-      if (payment.status !== 'approved')
-        throw new HttpsError('failed-precondition', 'Pago no aprobado')
-      if (payment.metadata?.userId !== userId)
-        throw new HttpsError('permission-denied', 'Pago no corresponde a tu usuario')
-      metadata = payment.metadata
+    try {
+      if (provider === 'mercadopago') {
+  const { MercadoPagoConfig, Payment } = require('mercadopago')
+  const mp = new MercadoPagoConfig({ accessToken: MERCADOPAGO_ACCESS_TOKEN.value() })
+  const payment = await new Payment(mp).get({ id: sessionId })
+
+  if (payment.status !== 'approved')
+    throw new HttpsError('failed-precondition', 'Pago no aprobado')
+
+  // MercadoPago convierte camelCase a snake_case en el metadata
+  const paymentUserId = payment.metadata?.userId || payment.metadata?.user_id
+  if (!paymentUserId || paymentUserId !== userId)
+    throw new HttpsError('permission-denied', 'Pago no corresponde a tu usuario')
+
+  metadata = {
+    type: payment.metadata?.type,
+    courseId: payment.metadata?.courseId || payment.metadata?.course_id || '',
+    duration: payment.metadata?.duration || '1y',
+    userId: paymentUserId,
+  }
+}
+    } catch (e) {
+      if (e instanceof HttpsError) throw e
+      console.error('Error verificando pago:', e)
+      throw new HttpsError('internal', 'Error al verificar el pago')
     }
-  } catch (e) {
-    if (e instanceof HttpsError) throw e
-    console.error('Error verificando pago:', e)
-    throw new HttpsError('internal', 'Error al verificar el pago')
-  }
 
-  const type = metadata.type
-  const courseId = metadata.courseId
-  const duration = metadata.duration || '1y'
-  const userRef = db.doc('users/' + userId)
+    const type = metadata.type
+    const courseId = metadata.courseId
+    const duration = metadata.duration || '1y'
+    const userRef = db.doc('users/' + userId)
 
-  let result
+    let result
 
-  if (type === 'course' && courseId) {
-    await userRef.update({
-      enrolledCourses: admin.firestore.FieldValue.arrayUnion(courseId),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    if (type === 'course' && courseId) {
+      await userRef.update({
+        enrolledCourses: admin.firestore.FieldValue.arrayUnion(courseId),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      })
+      result = { success: true, type: 'course', courseId }
+    } else if (type === 'premium') {
+      const expiry = calcPremiumExpiry(duration)
+      await userRef.update({
+        accessType: 'all',
+        premiumExpiry: admin.firestore.Timestamp.fromDate(expiry),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      })
+      result = { success: true, type: 'premium', expiresAt: expiry.toISOString() }
+    } else {
+      throw new HttpsError('invalid-argument', 'Tipo de pago no reconocido')
+    }
+
+    await processedRef.set({
+      result,
+      userId,
+      processedAt: admin.firestore.FieldValue.serverTimestamp(),
     })
-    result = { success: true, type: 'course', courseId }
-  } else if (type === 'premium') {
-    const expiry = calcPremiumExpiry(duration)
-    await userRef.update({
-      accessType: 'all',
-      premiumExpiry: admin.firestore.Timestamp.fromDate(expiry),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    })
-    result = { success: true, type: 'premium', expiresAt: expiry.toISOString() }
-  } else {
-    throw new HttpsError('invalid-argument', 'Tipo de pago no reconocido')
+
+    return result
   }
-
-  await processedRef.set({
-    result,
-    userId,
-    processedAt: admin.firestore.FieldValue.serverTimestamp(),
-  })
-
-  return result
-})
+)
 
 // ─────────────────────────────────────────────
 // 5. ALTA MANUAL DE ALUMNO
@@ -448,3 +457,156 @@ exports.deleteUserAccount = onRequest(async (req, res) => {
     res.status(500).json({ error: e.message })
   }
 })
+
+// ─────────────────────────────────────────────
+// 8. LIMPIAR PAGOS PROCESADOS ANTIGUOS
+// ─────────────────────────────────────────────
+
+exports.cleanProcessedPayments = onSchedule('every 24 hours', async () => {
+  const thirtyDaysAgo = new Date()
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+
+  const snapshot = await db.collection('processedPayments')
+    .where('processedAt', '<', admin.firestore.Timestamp.fromDate(thirtyDaysAgo))
+    .limit(500)
+    .get()
+
+  const batch = db.batch()
+  snapshot.docs.forEach(doc => batch.delete(doc.ref))
+  await batch.commit()
+
+  console.log('Limpiados ' + snapshot.size + ' pagos procesados antiguos')
+})
+
+// ─────────────────────────────────────────────
+// 9. REVOCAR PREMIUM VENCIDO
+// ─────────────────────────────────────────────
+
+exports.revokeExpiredPremium = onSchedule('every 24 hours', async () => {
+  const now = admin.firestore.Timestamp.now()
+
+  const snapshot = await db.collection('users')
+    .where('accessType', '==', 'all')
+    .where('premiumExpiry', '<', now)
+    .get()
+
+  const toRevoke = snapshot.docs.filter(d => d.data().role !== 'admin')
+
+  const batch = db.batch()
+  toRevoke.forEach(doc => {
+    batch.update(doc.ref, {
+      accessType: 'limited',
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    })
+  })
+  await batch.commit()
+
+  console.log('Revocados ' + toRevoke.length + ' accesos premium vencidos')
+})
+// ─────────────────────────────────────────────
+// 10. WEBHOOK MERCADOPAGO
+// ─────────────────────────────────────────────
+
+exports.mercadopagoWebhook = onRequest(
+  { secrets: [MERCADOPAGO_ACCESS_TOKEN, MERCADOPAGO_WEBHOOK_SECRET] },
+  async (req, res) => {
+    res.set('Access-Control-Allow-Origin', '*')
+    if (req.method === 'OPTIONS') { res.status(204).send(''); return }
+
+    try {
+      // Verificar firma de MercadoPago
+      const signature = req.headers['x-signature']
+      const requestId = req.headers['x-request-id']
+
+      if (signature && requestId) {
+        const crypto = require('crypto')
+        const { type, data } = req.body
+        const manifest = `id:${data?.id};request-id:${requestId};ts:${signature.split(',').find(s => s.startsWith('ts='))?.split('=')[1]};`
+        const expectedSignature = crypto
+          .createHmac('sha256', MERCADOPAGO_WEBHOOK_SECRET.value())
+          .update(manifest)
+          .digest('hex')
+        const receivedSignature = signature.split(',').find(s => s.startsWith('v1='))?.split('=')[1]
+
+        if (expectedSignature !== receivedSignature) {
+          console.warn('Firma de webhook inválida')
+          res.status(401).json({ error: 'Firma inválida' })
+          return
+        }
+      }
+
+      const { type, data } = req.body
+
+      if (type !== 'payment') {
+        res.status(200).send('ok')
+        return
+      }
+
+      const paymentId = data?.id
+      if (!paymentId) {
+        res.status(400).json({ error: 'Payment ID requerido' })
+        return
+      }
+
+      const processedRef = db.doc(`processedPayments/${paymentId}`)
+      const alreadyProcessed = await processedRef.get()
+      if (alreadyProcessed.exists) {
+        res.status(200).send('ok')
+        return
+      }
+
+      const { MercadoPagoConfig, Payment } = require('mercadopago')
+      const mp = new MercadoPagoConfig({ accessToken: MERCADOPAGO_ACCESS_TOKEN.value() })
+      const payment = await new Payment(mp).get({ id: paymentId })
+
+      if (payment.status !== 'approved') {
+        res.status(200).send('ok')
+        return
+      }
+
+      const userId = payment.metadata?.userId || payment.metadata?.user_id
+      const type2 = payment.metadata?.type
+      const courseId = payment.metadata?.courseId || payment.metadata?.course_id || ''
+      const duration = payment.metadata?.duration || '1y'
+
+      if (!userId || !type2) {
+        console.error('Metadata incompleto en pago:', paymentId)
+        res.status(200).send('ok')
+        return
+      }
+
+      const userRef = db.doc('users/' + userId)
+      let result
+
+      if (type2 === 'course' && courseId) {
+        await userRef.update({
+          enrolledCourses: admin.firestore.FieldValue.arrayUnion(courseId),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        })
+        result = { success: true, type: 'course', courseId }
+      } else if (type2 === 'premium') {
+        const expiry = calcPremiumExpiry(duration)
+        await userRef.update({
+          accessType: 'all',
+          premiumExpiry: admin.firestore.Timestamp.fromDate(expiry),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        })
+        result = { success: true, type: 'premium', expiresAt: expiry.toISOString() }
+      }
+
+      if (result) {
+        await processedRef.set({
+          result,
+          userId,
+          processedAt: admin.firestore.FieldValue.serverTimestamp(),
+        })
+        console.log('Acceso otorgado via webhook para usuario:', userId)
+      }
+
+      res.status(200).send('ok')
+    } catch (e) {
+      console.error('Error en webhook MercadoPago:', e)
+      res.status(500).json({ error: e.message })
+    }
+  }
+)

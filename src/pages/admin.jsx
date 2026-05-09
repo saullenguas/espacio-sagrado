@@ -77,26 +77,41 @@ function Admin() {
   }, [])
 
   const handleDelete = async (type, id, courseId, moduleId) => {
-    if (deleteConfirm !== id) { setDeleteConfirm(id); return }
-    setDeleteError(null)
-    try {
-      if (type === 'course') {
-        await deleteCourse(id)
-        setCourses(prev => prev.filter(c => c.id !== id))
-      } else if (type === 'module') {
-        await deleteModule(courseId, id)
-        setCourses(await getAllCoursesWithModules())
-      } else if (type === 'lesson') {
-        await deleteLesson(courseId, moduleId, id)
-        setCourses(await getAllCoursesWithModules())
-      }
-      setDeleteConfirm(null)
-    } catch (error) {
-      console.error('Error eliminando:', error)
-      setDeleteError('No se pudo eliminar. Intenta de nuevo.')
-      setDeleteConfirm(null)
+  if (deleteConfirm !== id) { setDeleteConfirm(id); return }
+  setDeleteError(null)
+  try {
+    if (type === 'course') {
+      await deleteCourse(id)
+      setCourses(prev => prev.filter(c => c.id !== id))
+    } else if (type === 'module') {
+      await deleteModule(courseId, id)
+      setCourses(prev => prev.map(c =>
+        c.id === courseId
+          ? { ...c, modules: c.modules.filter(m => m.id !== id) }
+          : c
+      ))
+    } else if (type === 'lesson') {
+      await deleteLesson(courseId, moduleId, id)
+      setCourses(prev => prev.map(c =>
+        c.id === courseId
+          ? {
+              ...c,
+              modules: c.modules.map(m =>
+                m.id === moduleId
+                  ? { ...m, lessons: m.lessons.filter(l => l.id !== id) }
+                  : m
+              )
+            }
+          : c
+      ))
     }
+    setDeleteConfirm(null)
+  } catch (error) {
+    console.error('Error eliminando:', error)
+    setDeleteError('No se pudo eliminar. Intenta de nuevo.')
+    setDeleteConfirm(null)
   }
+}
 
   const handleEnrollManually = async (e) => {
     e.preventDefault()

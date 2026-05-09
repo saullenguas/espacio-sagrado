@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { signOut } from 'firebase/auth'
 import { auth } from '../firebase/config'
@@ -61,7 +62,12 @@ function Navbar() {
         <div className="flex items-center gap-3">
           {user ? (
             <>
-              <span className="text-sm text-slate-500 hidden md:block">{user.email}</span>
+           <Link
+            to="/perfil"
+            className="text-sm text-slate-500 hidden md:block hover:text-indigo-600 transition"
+>
+            {user.email}
+          </Link>
               <button
                 onClick={handleLogout}
                 className="bg-slate-100 text-slate-700 px-4 py-2 rounded-lg hover:bg-slate-200 transition text-sm font-medium"
@@ -83,4 +89,5 @@ function Navbar() {
   )
 }
 
-export default Navbar
+
+export default memo(Navbar)

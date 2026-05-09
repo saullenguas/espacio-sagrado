@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { useState, useRef, useEffect } from 'react';
 // ✅ RUTA CORREGIDA: apunta a services
 import { getVideoEmbedUrl } from '../services/videoEmbed';
@@ -83,4 +84,6 @@ const VideoPlayer = ({ url, title = "Video de la lección" }) => {
   );
 };
 
-export default VideoPlayer;
+
+export default memo(VideoPlayer)
+// y agregar al import: import { memo } from 'react'

@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { useEffect } from 'react'
 
 function Toast({ message, type = 'info', onClose, duration = 4000 }) {
@@ -36,4 +37,6 @@ function Toast({ message, type = 'info', onClose, duration = 4000 }) {
   )
 }
 
-export default Toast
+
+export default memo(Toast)
+// y agregar al import: import { memo } from 'react'

@@ -18,6 +18,7 @@ const AdminSettings = lazy(() => import("./pages/AdminSettings"))
 const ResetPassword = lazy(() => import("./pages/ResetPassword"))
 const Checkout = lazy(() => import("./pages/Checkout"))
 const PagoExitoso = lazy(() => import("./pages/PagoExitoso"))
+const Profile = lazy(() => import("./pages/Profile"))
 
 function App() {
   return (
@@ -54,6 +55,14 @@ function App() {
             element={
               <PrivateRoute>
                 <Lesson />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/perfil"
+            element={
+              <PrivateRoute>
+                <Profile />
               </PrivateRoute>
             }
           />
@@ -104,7 +113,7 @@ function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>
-    </Suspense>
+      </Suspense>
   )
 }
 

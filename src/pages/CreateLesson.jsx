@@ -1,3 +1,4 @@
+import RichTextEditor from '../components/RichTextEditor'
 import { useState, useEffect } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { createLesson, getLessonById, updateLesson } from "../services/moduleService";
@@ -162,15 +163,9 @@ function CreateLesson() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Reflexión</label>
-            <textarea
-              value={reflection}
-              onChange={(e) => setReflection(e.target.value)}
-              rows={3}
-              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
-              placeholder="Preguntas para reflexionar"
-            />
-          </div>
+  
+  <RichTextEditor content={content} onChange={setContent} />
+</div>
 
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Ejercicio / Práctica</label>
