@@ -10,6 +10,8 @@ const RESEND_API_KEY = defineSecret('RESEND_API_KEY')
 const STRIPE_SECRET_KEY = defineSecret('STRIPE_SECRET_KEY')
 const MERCADOPAGO_ACCESS_TOKEN = defineSecret('MERCADOPAGO_ACCESS_TOKEN')
 const MERCADOPAGO_WEBHOOK_SECRET = defineSecret('MERCADOPAGO_WEBHOOK_SECRET')
+const EMAIL_TEST_MODE = defineSecret('EMAIL_TEST_MODE')
+
 // ─────────────────────────────────────────────
 // HELPERS
 // ─────────────────────────────────────────────
@@ -33,11 +35,11 @@ const calcPremiumExpiry = (duration) => {
 const sendEmail = async (apiKey, { to, subject, html }) => {
   const { Resend } = require('resend')
   const resend = new Resend(apiKey)
-  const TEST_MODE = process.env.EMAIL_TEST_MODE === 'true'
+  const TEST_MODE = EMAIL_TEST_MODE.value() === 'true'
   const recipient = TEST_MODE ? 'tierraevolucion@gmail.com' : to
   try {
     await resend.emails.send({
-      from: 'Espacio Sagrado <onboarding@resend.dev>',
+      from: 'Espacio Sagrado <hola@alianzacristalina.com>',
       to: recipient,
       subject,
       html,
@@ -53,7 +55,7 @@ const sendEmail = async (apiKey, { to, subject, html }) => {
 // ─────────────────────────────────────────────
 
 exports.assignStudentRole = onDocumentCreated(
-  { document: 'users/{uid}', secrets: [RESEND_API_KEY] },
+  { document: 'users/{uid}', secrets: [RESEND_API_KEY, EMAIL_TEST_MODE] },
   async (event) => {
     const uid = event.params.uid
     const data = event.data && event.data.data()
@@ -83,7 +85,7 @@ exports.assignStudentRole = onDocumentCreated(
 // ─────────────────────────────────────────────
 
 exports.setAdminRole = onCall(
-  { secrets: [RESEND_API_KEY] },
+  { secrets: [RESEND_API_KEY, EMAIL_TEST_MODE] },
   async (request) => {
     await verifyAdmin(request)
 
@@ -253,26 +255,35 @@ exports.verifyAndGrantAccess = onCall(
     }
 
     try {
+      if (provider === 'stripe') {
+        const stripe = require('stripe')(STRIPE_SECRET_KEY.value())
+        const session = await stripe.checkout.sessions.retrieve(sessionId)
+        if (session.payment_status !== 'paid')
+          throw new HttpsError('failed-precondition', 'Pago no completado')
+        if (session.metadata.userId !== userId)
+          throw new HttpsError('permission-denied', 'Sesión no corresponde a tu usuario')
+        metadata = session.metadata
+      }
+
       if (provider === 'mercadopago') {
-  const { MercadoPagoConfig, Payment } = require('mercadopago')
-  const mp = new MercadoPagoConfig({ accessToken: MERCADOPAGO_ACCESS_TOKEN.value() })
-  const payment = await new Payment(mp).get({ id: sessionId })
+        const { MercadoPagoConfig, Payment } = require('mercadopago')
+        const mp = new MercadoPagoConfig({ accessToken: MERCADOPAGO_ACCESS_TOKEN.value() })
+        const payment = await new Payment(mp).get({ id: sessionId })
 
-  if (payment.status !== 'approved')
-    throw new HttpsError('failed-precondition', 'Pago no aprobado')
+        if (payment.status !== 'approved')
+          throw new HttpsError('failed-precondition', 'Pago no aprobado')
 
-  // MercadoPago convierte camelCase a snake_case en el metadata
-  const paymentUserId = payment.metadata?.userId || payment.metadata?.user_id
-  if (!paymentUserId || paymentUserId !== userId)
-    throw new HttpsError('permission-denied', 'Pago no corresponde a tu usuario')
+        const paymentUserId = payment.metadata?.userId || payment.metadata?.user_id
+        if (!paymentUserId || paymentUserId !== userId)
+          throw new HttpsError('permission-denied', 'Pago no corresponde a tu usuario')
 
-  metadata = {
-    type: payment.metadata?.type,
-    courseId: payment.metadata?.courseId || payment.metadata?.course_id || '',
-    duration: payment.metadata?.duration || '1y',
-    userId: paymentUserId,
-  }
-}
+        metadata = {
+          type: payment.metadata?.type,
+          courseId: payment.metadata?.courseId || payment.metadata?.course_id || '',
+          duration: payment.metadata?.duration || '1y',
+          userId: paymentUserId,
+        }
+      }
     } catch (e) {
       if (e instanceof HttpsError) throw e
       console.error('Error verificando pago:', e)
@@ -319,7 +330,7 @@ exports.verifyAndGrantAccess = onCall(
 // ─────────────────────────────────────────────
 
 exports.enrollStudentManually = onCall(
-  { secrets: [RESEND_API_KEY] },
+  { secrets: [RESEND_API_KEY, EMAIL_TEST_MODE] },
   async (request) => {
     await verifyAdmin(request)
 
@@ -503,6 +514,7 @@ exports.revokeExpiredPremium = onSchedule('every 24 hours', async () => {
 
   console.log('Revocados ' + toRevoke.length + ' accesos premium vencidos')
 })
+
 // ─────────────────────────────────────────────
 // 10. WEBHOOK MERCADOPAGO
 // ─────────────────────────────────────────────
@@ -514,7 +526,6 @@ exports.mercadopagoWebhook = onRequest(
     if (req.method === 'OPTIONS') { res.status(204).send(''); return }
 
     try {
-      // Verificar firma de MercadoPago
       const signature = req.headers['x-signature']
       const requestId = req.headers['x-request-id']
 
