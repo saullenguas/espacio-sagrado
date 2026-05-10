@@ -28,14 +28,13 @@ function Login() {
       navigate(redirectTo, { replace: true })
     } catch (error) {
       console.error('Error al iniciar sesión:', error)
-      if (error.code === 'auth/user-not-found') {
-        setError('No encontramos una cuenta con ese correo.')
-      } else if (error.code === 'auth/wrong-password') {
-        setError('Contraseña incorrecta.')
-      } else if (error.code === 'auth/invalid-email') {
-        setError('El formato del correo no es válido.')
-      } else if (error.code === 'auth/invalid-credential') {
-        setError('Credenciales inválidas. Verifica tu correo y contraseña.')
+      if (
+        error.code === 'auth/user-not-found' ||
+        error.code === 'auth/wrong-password' ||
+        error.code === 'auth/invalid-credential' ||
+        error.code === 'auth/invalid-email'
+      ) {
+        setError('Correo o contraseña incorrectos.')
       } else {
         setError('Ocurrió un error al iniciar sesión. Inténtalo de nuevo.')
       }
